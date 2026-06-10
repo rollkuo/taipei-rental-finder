@@ -114,11 +114,15 @@ class _591Source:
                     seen.add(match.group(1))
                     ids.append(match.group(1))
 
-            # Try next page
+            # Try next page. DrissionPage returns a falsy NoneElement (not Python None)
+            # when not found, so use truthiness rather than `is None`.
             next_btn = page.ele("text:下一頁", timeout=2)
-            if next_btn is None:
+            if not next_btn:
                 break
-            href = (next_btn.attr("href") or "").strip()
+            try:
+                href = (next_btn.attr("href") or "").strip()
+            except Exception:
+                href = ""
             if not href or href == "#":
                 break
             try:
