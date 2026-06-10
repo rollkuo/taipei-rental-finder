@@ -49,19 +49,50 @@ TAIPEI_DISTRICTS = {
 
 
 class _591Source:
+    """Sort modes:
+      - 'posttime': newest first (catches freshly listed apartments)
+      - 'price':    cheapest first (catches older but affordable apartments
+                    that get buried in the posttime view)
+
+    A single fetch() runs both passes and dedupes by source_id. This is
+    necessary because 591 only returns ~30 results per page and the same
+    apartment may not appear in both rankings.
+    """
+
     name = "591"
 
-    def __init__(self, max_pages: int = 5, headless: bool = True):
-        self.max_pages = max_pages
+    def __init__(
+        self,
+        max_pages_per_sort: int = 2,
+        headless: bool = True,
+        sort_modes: tuple[str, ...] = ("posttime", "price"),
+        detail_sleep_seconds: float = 5.0,
+        max_details_per_run: int = 60,
+    ):
+        # Conservative defaults — 591 rate-limits aggressively. Each run:
+        #   • 2 sorts × ~30 IDs ≈ 60 list-page hits (cheap)
+        #   • capped at 60 detail-page hits with 5s polite pause between each
+        #   • total run wall time ≈ 5–7 min
+        self.max_pages_per_sort = max_pages_per_sort
         self.headless = headless
+        self.sort_modes = sort_modes
+        self.detail_sleep_seconds = detail_sleep_seconds
+        self.max_details_per_run = max_details_per_run
 
-    def _build_search_url(self, filters: Filters) -> str:
+    def _build_search_url(self, filters: Filters, sort_mode: str) -> str:
+        # 591 sort params:
+        #   posttime + desc → newest first
+        #   money + asc     → cheapest first
+        if sort_mode == "price":
+            order, order_type = "money", "asc"
+        else:
+            order, order_type = "posttime", "desc"
         params = [
             f"region={filters.city_region_id}",
             f"kind={filters.kind}",
             f"rentprice=,{filters.max_price}",
-            "order=posttime",
-            "orderType=desc",
+            f"order={order}",
+            f"orderType={order_type}",
         ]
         if filters.require_elevator:
             params.append("other=lift")
@@ -81,31 +112,64 @@ class _591Source:
         return ChromiumPage(opts)
 
     def fetch(self, filters: Filters) -> Iterator[RawListing]:
-        """Two-stage crawl. Yields RawListing instances (pre-filter)."""
+        """Two-stage crawl across all sort_modes. Yields unique RawListings.
+
+        Hard-stops at max_details_per_run to avoid triggering 591 rate limiting.
+        Listings beyond the cap will be picked up on the next hourly run.
+        """
         page = self._make_page()
+        seen_ids: set[str] = set()
+        details_fetched = 0
+        consecutive_failures = 0
         try:
-            listing_ids = self._collect_ids(page, filters)
-            log.info("591: collected %d listing IDs", len(listing_ids))
-            for lid in listing_ids:
-                listing = self._fetch_detail(page, lid)
-                if listing is not None:
-                    yield listing
-                time.sleep(1.5)  # be polite
+            for sort_mode in self.sort_modes:
+                if details_fetched >= self.max_details_per_run:
+                    log.info("Hit max_details_per_run=%d, stopping", self.max_details_per_run)
+                    break
+                ids = self._collect_ids(page, filters, sort_mode)
+                new_ids = [i for i in ids if i not in seen_ids]
+                seen_ids.update(new_ids)
+                log.info(
+                    "591 sort=%s: collected %d IDs (%d new, %d already seen)",
+                    sort_mode, len(ids), len(new_ids), len(ids) - len(new_ids),
+                )
+                for lid in new_ids:
+                    if details_fetched >= self.max_details_per_run:
+                        break
+                    listing = self._fetch_detail(page, lid)
+                    details_fetched += 1
+                    if listing is not None:
+                        consecutive_failures = 0
+                        yield listing
+                    else:
+                        consecutive_failures += 1
+                        # 5 in a row → likely IP-blocked. Stop early so we don't
+                        # waste the rest of the budget hitting walls.
+                        if consecutive_failures >= 5:
+                            log.warning(
+                                "5 consecutive parse failures — likely rate-limited, "
+                                "stopping early after %d details",
+                                details_fetched,
+                            )
+                            return
+                    time.sleep(self.detail_sleep_seconds)
         finally:
             try:
                 page.quit()
             except Exception:
                 pass
 
-    def _collect_ids(self, page: ChromiumPage, filters: Filters) -> list[str]:
-        url = self._build_search_url(filters)
-        log.info("591 list URL: %s", url)
+    def _collect_ids(
+        self, page: ChromiumPage, filters: Filters, sort_mode: str
+    ) -> list[str]:
+        url = self._build_search_url(filters, sort_mode)
+        log.info("591 list URL [%s]: %s", sort_mode, url)
         page.get(url)
         page.wait.eles_loaded("css:.item-info-title a", timeout=10)
 
         ids: list[str] = []
         seen: set[str] = set()
-        for page_num in range(1, self.max_pages + 1):
+        for page_num in range(1, self.max_pages_per_sort + 1):
             elements = page.eles("css:.item-info-title a")
             for el in elements:
                 href = el.attr("href") or ""

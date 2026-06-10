@@ -75,13 +75,23 @@ class TestListingIdExtract:
 
 
 class TestSearchUrl:
-    def test_url_params(self):
+    def test_posttime_sort_params(self):
         src = _591Source()
         f = Filters()
-        url = src._build_search_url(f)
+        url = src._build_search_url(f, "posttime")
         assert "region=1" in url
         assert "kind=1" in url
         assert "rentprice=,120000" in url
         assert "other=lift" in url
         assert "order=posttime" in url
         assert "orderType=desc" in url
+
+    def test_price_sort_params(self):
+        src = _591Source()
+        f = Filters()
+        url = src._build_search_url(f, "price")
+        assert "region=1" in url
+        assert "rentprice=,120000" in url
+        assert "other=lift" in url
+        assert "order=money" in url
+        assert "orderType=asc" in url
