@@ -1,0 +1,61 @@
+name: Crawl 591
+
+on:
+  schedule:
+    # Hourly at :07 — offset from :00 spike
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Chrome
+        run: |
+          which google-chrome || which chromium-browser
+          google-chrome --version || chromium-browser --version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python 3.12 via uv
+        run: uv python install 3.12
+
+      - name: Install crawler dependencies
+        working-directory: crawler
+        run: uv sync --frozen
+
+      - name: Run crawler
+        working-directory: crawler
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: uv run python -m crawler.main
+
+      - name: Notify Discord on failure
+        if: failure()
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SERVER: ${{ github.server_url }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK_URL not set, skipping notify"
+            exit 0
+          fi
+          URL="${SERVER}/${REPO}/actions/runs/${RUN_ID}"
+          PAYLOAD=$(jq -n --arg msg "⚠️ 591 crawler failed: ${URL}" '{content: $msg}')
+          curl -s -X POST "$WEBHOOK" -H 'Content-Type: application/json' -d "$PAYLOAD"

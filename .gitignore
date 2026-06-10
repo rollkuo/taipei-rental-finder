@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env*.local
+.env
+.secrets/
+supabase/.temp/
+supabase/.branches/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.vercel
+dist/
+build/
+*.log

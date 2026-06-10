@@ -1,0 +1,17 @@
+project_id = "taipei-rental-finder"
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[api]
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+
+[studio]
+port = 54323
+
+[realtime]
+enabled = true
