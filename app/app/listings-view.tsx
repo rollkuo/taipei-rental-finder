@@ -7,6 +7,7 @@ import { DEFAULT_DISTRICTS, TAIPEI_DISTRICTS } from "@/lib/constants";
 import { formatPrice, formatRelativeTime } from "@/lib/format";
 import { getSupabaseBrowser } from "@/lib/supabase/browser";
 import type { Listing, SortKey } from "@/lib/types";
+import { ManualAddButton } from "./manual-add-button";
 
 interface LastRun {
   source: string;
@@ -206,7 +207,7 @@ export function ListingsView({ initialListings, lastSuccessfulRun }: Props) {
 
       {visible.length === 0 ? (
         <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-12 text-center text-zinc-500">
-          沒有符合條件的物件。試試多選幾個行政區，或等下次抓取。
+          沒有符合條件的物件。試試多選幾個行政區、或按右下角「+」手動加入。
         </div>
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -220,6 +221,8 @@ export function ListingsView({ initialListings, lastSuccessfulRun }: Props) {
           ))}
         </ul>
       )}
+
+      <ManualAddButton />
     </main>
   );
 }
