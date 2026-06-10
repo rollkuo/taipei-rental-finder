@@ -19,6 +19,7 @@ if __package__ in (None, ""):
 from crawler.config import FILTERS
 from crawler.notify import notify_discord
 from crawler.sources._591 import _591Source
+from crawler.sources._sinyi import SinyiSource
 from crawler.supabase_client import begin_run, finish_run, make_client, upsert_listings
 
 logging.basicConfig(
@@ -54,7 +55,7 @@ def run_source(source, filters) -> tuple[int, int]:
 
 
 def main() -> int:
-    sources = [_591Source()]
+    sources = [_591Source(), SinyiSource()]
     failures = 0
     for src in sources:
         try:
